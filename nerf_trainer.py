@@ -242,10 +242,11 @@ class NerfTrainer:
             # optimizer = Lamb(params=grad_vars, lr=lrate, betas=(0.9, 0.999))
 
         start = 0
-        basedir = self.args.basedir
-        expname = self.args.expname
+        self.basedir = self.args.basedir
+        self.expname = self.args.expname
+        os.makedirs(os.path.join(self.basedir, self.expname), exist_ok=True)
 
-        print(basedir, expname)
+        print(self.basedir, self.expname)
     
         ##########################
     
@@ -253,7 +254,7 @@ class NerfTrainer:
         if self.args.ft_path is not None and self.args.ft_path!='None':
             ckpts = [self.args.ft_path]
         else:
-            ckpts = [os.path.join(basedir, expname, f) for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
+            ckpts = [os.path.join(self.basedir, self.expname, f) for f in sorted(os.listdir(os.path.join(self.basedir, self.expname))) if 'tar' in f]
     
         print('Found ckpts', ckpts)
         if len(ckpts) > 0 and not self.args.no_reload:
@@ -564,9 +565,6 @@ class NerfTrainer:
             self.render_poses = np.array(poses[i_test])
     
         # Create log dir and copy the config file
-        self.basedir = self.args.basedir
-        self.expname = self.args.expname
-        os.makedirs(os.path.join(self.basedir, self.expname), exist_ok=True)
         f = os.path.join(self.basedir, self.expname, 'args.txt')
         with open(f, 'w') as file:
             for arg in sorted(vars(self.args)):
