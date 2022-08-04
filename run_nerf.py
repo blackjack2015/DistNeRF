@@ -639,7 +639,7 @@ def train():
     # Create nerf model
     render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
     # needed if the version of pytorch >= 1.12
-    optimizer.param_groups[0]['capturable'] = True
+    # optimizer.param_groups[0]['capturable'] = True
     global_step = start
 
     bds_dict = {

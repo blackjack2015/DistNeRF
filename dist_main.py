@@ -1,30 +1,52 @@
 import configargparse
+from tqdm import tqdm, trange
 import torch
 import horovod.torch as hvd
 from nerf_trainer import NerfTrainer
 
 
 def main(args):
+    global_size = hvd.size()
     global_rank = hvd.rank()
     local_rank = hvd.local_rank()
     torch.cuda.set_device(local_rank)
 
-    trainer = NerfTrainer(args, rank=global_rank, local_rank=local_rank)
+    trainer = NerfTrainer(args, rank=global_rank, local_rank=local_rank, nworkers=global_size)
+    start = trainer.get_current_step()
 
     # hvd.broadcast_parameters(trainer.network.state_dict(), root_rank=0)
 
     optimizer = hvd.DistributedOptimizer(trainer.optimizer, named_parameters=trainer.named_parameters())  # TODO: not sure whether it is different from named_parameters()
     trainer.optimizer = optimizer
 
-    args.epoches = 1
-    for i in range(args.epoches):
+    trainer.prepare_train_env()
+    args.step = 240000
+    for i in trange(start, args.step):
+        trainer.update_learning_rate(i)
+        loss, psnr = trainer.train_one_step(i)
 
-        trainer.train_one_epoch(i)
-        with torch.no_grad():
-            trainer.validate()
+        # validate model accuracy on test set
+        if i % 1000:
+            pass
+            # trainer.validate()
 
         if global_rank == 0:  # rank 0 records some global information
-            pass
+            # logging
+            if i % args.i_print==0:
+                tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss}  PSNR: {psnr}")
+
+            # save checkpoint
+            if (i % args.i_weights==0) and (i > 0):
+                trainer.log_checkpoint()
+
+            # print test accuracy and save test results as images alternatively
+            if (i % args.i_testset==0) and (i > 0):
+                avg_psnr = trainer.log_test_set()
+                tqdm.write(f"[TEST] Iter: {i} PSNR: {avg_psnr}")
+
+            # save test results as a video
+            if (i % args.i_video==0) and (i > 0):
+                trainer.log_test_video()
 
 if __name__ == '__main__':
 
