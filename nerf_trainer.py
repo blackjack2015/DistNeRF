@@ -231,12 +231,14 @@ class NerfTrainer:
                        netchunk=self.args.netchunk)
     
         # Create optimizer
+        lrate = self.args.lrate
         if self.nworkers == 1:
-            optimizer = torch.optim.Adam(params=grad_vars, lr=self.args.lrate, betas=(0.9, 0.999))
+            optimizer = torch.optim.Adam(params=grad_vars, lr=lrate, betas=(0.9, 0.999))
         else:
-            lrate = self.args.lrate * self.nworkers
-            optimizer = torch.optim.Adam(params=grad_vars, lr=self.args.lrate, betas=(0.9, 0.999))
+            lrate *= self.nworkers
+            optimizer = torch.optim.Adam(params=grad_vars, lr=lrate, betas=(0.9, 0.999))
             # optimizer = Lamb(params=grad_vars, lr=lrate, betas=(0.9, 0.999))
+        print("initial lr:", lrate)
 
         start = 0
         self.basedir = self.args.basedir
@@ -632,7 +634,7 @@ class NerfTrainer:
             if self.i_batch >= self.rays_rgb.shape[0]:
                 print("Shuffle data after an epoch!")
                 rand_idx = torch.randperm(self.rays_rgb.shape[0])
-                rays_rgb = rays_rgb[rand_idx]
+                self.rays_rgb = self.rays_rgb[rand_idx]
                 self.i_batch = 0
     
         else:
