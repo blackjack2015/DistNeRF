@@ -19,5 +19,5 @@ precrop_frac = 0.5
 half_res = True
 
 i_weights = 10000
-i_video = 100
-i_testset = 100
+i_video = 10000
+i_testset = 1000

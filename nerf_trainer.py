@@ -182,9 +182,6 @@ class NerfTrainer:
                 filename = os.path.join(savedir, '{:03d}.png'.format(i))
                 imageio.imwrite(filename, rgb8)
 
-            if i > 2:
-                break
-
         rgbs = torch.stack(rgbs, 0)
         disps = torch.stack(disps, 0)
     
