@@ -2,6 +2,7 @@ import configargparse
 from tqdm import tqdm, trange
 import torch
 import horovod.torch as hvd
+import wandb
 from nerf_trainer import NerfTrainer
 
 
@@ -10,6 +11,12 @@ def main(args):
     global_rank = hvd.rank()
     local_rank = hvd.local_rank()
     torch.cuda.set_device(local_rank)
+
+    args.expname += '-n%d' % global_size
+
+    # init wandb
+    if global_rank == 0:
+        wandb.init(project="nerf", entity="blackjack2015", name=args.expname, config=args)
 
     trainer = NerfTrainer(args, rank=global_rank, local_rank=local_rank, nworkers=global_size)
     start = trainer.get_current_step()
@@ -20,7 +27,7 @@ def main(args):
     trainer.optimizer = optimizer
 
     trainer.prepare_train_env()
-    args.step = 240000
+    args.step = 100000
     for i in trange(start, args.step):
         trainer.update_learning_rate(i)
         loss, psnr = trainer.train_one_step(i)
@@ -34,15 +41,23 @@ def main(args):
             # logging
             if i % args.i_print==0:
                 tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss}  PSNR: {psnr}")
+                wandb.log({
+                    'train_loss': loss,
+                    'train_psnr': psnr
+                })
 
             # save checkpoint
             if (i % args.i_weights==0) and (i > 0):
                 trainer.log_checkpoint()
 
+            # TODO: support distributed
             # print test accuracy and save test results as images alternatively
             if (i % args.i_testset==0) and (i > 0):
                 avg_psnr = trainer.log_test_set()
                 tqdm.write(f"[TEST] Iter: {i} PSNR: {avg_psnr}")
+                wandb.log({
+                    'test_psnr': avg_psnr
+                })
 
             # save test results as a video
             if (i % args.i_video==0) and (i > 0):
