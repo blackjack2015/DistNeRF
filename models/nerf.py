@@ -126,10 +126,6 @@ class BasicMLP(nn.Module):
 # NeRF Model
 class NeRF(nn.Module):
     def __init__(self,
-                 H,
-                 W,
-                 focal,
-                 K,
                  multires,
                  multires_views,
                  i_embed,
@@ -137,9 +133,6 @@ class NeRF(nn.Module):
                  hidden=256,
                  skips=[4],
                  use_viewdirs=False,
-                 near=0.,
-                 far=1.,
-                 ndc=True,
                  lindisp=True,
                  N_samples=64,
                  N_importance=128,
@@ -150,18 +143,11 @@ class NeRF(nn.Module):
         """ 
         """
         super(NeRF, self).__init__()
-        self.H = H
-        self.W = W
-        self.focal = focal
-        self.K = K
         self.depth = depth
         self.hidden = hidden
         self.skips = skips
         self.use_viewdirs = use_viewdirs
 
-        self.near = near
-        self.far = far
-        self.ndc = ndc
         self.lindisp = lindisp
         self.N_samples = N_samples
         self.N_importance = N_importance
@@ -374,7 +360,7 @@ class NeRF(nn.Module):
         outputs = torch.reshape(outputs_flat, list(inputs.shape[:-1]) + [outputs_flat.shape[-1]])
         return outputs
     
-    def forward(self, rays=None, c2w=None, c2w_staticcam=None, chunk=1024*32):
+    def forward(self, rays, chunk=1024*32):
         """Render rays
         Args:
           H: int. Height of image in pixels.
@@ -397,32 +383,15 @@ class NeRF(nn.Module):
           acc_map: [batch_size]. Accumulated opacity (alpha) along a ray.
           extras: dict with everything returned by render_rays().
         """
-        if c2w is not None:
-            # special case to render full image
-            rays_o, rays_d = get_rays(self.H, self.W, self.K, c2w)
-        else:
-            # use provided ray batch
-            rays_o, rays_d = rays
-    
-        if self.use_viewdirs:
-            # provide ray directions as input
-            viewdirs = rays_d
-            if c2w_staticcam is not None:
-                # special case to visualize effect of viewdirs
-                rays_o, rays_d = get_rays(self.H, self.W, self.K, c2w_staticcam)
-            viewdirs = viewdirs / torch.norm(viewdirs, dim=-1, keepdim=True)
-            viewdirs = torch.reshape(viewdirs, [-1,3]).float()
+        rays_o, rays_d, viewdirs = rays.origins, rays.directions, rays.viewdirs
     
         sh = rays_d.shape # [..., 3]
-        if self.ndc:
-            # for forward facing scenes
-            rays_o, rays_d = ndc_rays(self.H, self.W, self.K[0][0], 1., rays_o, rays_d)
     
         # Create ray batch
         rays_o = torch.reshape(rays_o, [-1,3]).float()
         rays_d = torch.reshape(rays_d, [-1,3]).float()
     
-        near, far = self.near * torch.ones_like(rays_d[...,:1]), self.far * torch.ones_like(rays_d[...,:1])
+        near, far = rays.near, rays.far
         rays = torch.cat([rays_o, rays_d, near, far], -1)
         if self.use_viewdirs:
             rays = torch.cat([rays, viewdirs], -1)
@@ -439,45 +408,55 @@ class NeRF(nn.Module):
         return ret_list + [ret_dict]
     
     # Given only camera poses and render the views
-    def render(self, render_poses, chunk, render_factor=0):
+    def render(self, rays, height, width, chunk=8192):
     
-        H, W, focal = self.H, self.W, self.focal
+        # rgbs = []
+        # disps = []
     
-        if render_factor!=0:
-            # Render downsampled for speed
-            H = H//render_factor
-            W = W//render_factor
-            focal = focal/render_factor
-    
-        rgbs = []
-        disps = []
-    
-        t = time.time()
+        # t = time.time()
 
-        # TODO: this for-loop should be moved outside the class
-        #       the input is a batch
+        # # TODO: this for-loop should be moved outside the class
+        # #       the input is a batch
+        # with torch.no_grad():
+        #     for i, c2w in enumerate(tqdm(render_poses)):
+        #         print(i, time.time() - t)
+        #         t = time.time()
+        #         rgb, disp, acc, _ = self(chunk=chunk, c2w=c2w[:3,:4])
+        #         rgbs.append(rgb)
+        #         disps.append(disp)
+        #         if i==0:
+        #             print(rgb.shape, disp.shape)
+    
+        #         """
+        #         if gt_imgs is not None and render_factor==0:
+        #             p = -10. * np.log10(np.mean(np.square(rgb.cpu().numpy() - gt_imgs[i])))
+        #             print(p)
+        #         """
+        #         if i > 1:
+        #             break
+    
+        # rgbs = torch.stack(rgbs, 0)
+        # disps = torch.stack(disps, 0)
+    
+        # return rgbs, disps
+
+        length = rays[0].shape[0]
+        rgbs = []
+        dists = []
+        accs = []
         with torch.no_grad():
-            for i, c2w in enumerate(tqdm(render_poses)):
-                print(i, time.time() - t)
-                t = time.time()
-                rgb, disp, acc, _ = self(chunk=chunk, c2w=c2w[:3,:4])
+            for i in range(0, length, chunk):
+                # put chunk of rays on device
+                chunk_rays = type(rays)(*map(lambda r: r[i:i+chunk], rays))
+                rgb, distance, acc, extras = self(chunk_rays)
                 rgbs.append(rgb)
-                disps.append(disp)
-                if i==0:
-                    print(rgb.shape, disp.shape)
-    
-                """
-                if gt_imgs is not None and render_factor==0:
-                    p = -10. * np.log10(np.mean(np.square(rgb.cpu().numpy() - gt_imgs[i])))
-                    print(p)
-                """
-                if i > 1:
-                    break
-    
-        rgbs = torch.stack(rgbs, 0)
-        disps = torch.stack(disps, 0)
-    
-        return rgbs, disps
+                dists.append(distance)
+                accs.append(acc)
+
+        rgbs = torch.cat(rgbs, dim=0).reshape(height, width, 3)
+        dists = torch.cat(dists, dim=0).reshape(height, width)
+        accs = torch.cat(accs, dim=0).reshape(height, width)
+        return rgbs, dists, accs
 
 
 def _xavier_init(model):

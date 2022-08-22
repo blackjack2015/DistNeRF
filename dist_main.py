@@ -19,49 +19,44 @@ def main(args):
         wandb.init(project="nerf", entity="blackjack2015", name=args.expname, config=args)
 
     trainer = NerfTrainer(args, rank=global_rank, local_rank=local_rank, nworkers=global_size)
-    start = trainer.get_current_step()
+    start = trainer.get_current_epoch()
 
     # hvd.broadcast_parameters(trainer.network.state_dict(), root_rank=0)
 
     optimizer = hvd.DistributedOptimizer(trainer.optimizer, named_parameters=trainer.named_parameters())  # TODO: not sure whether it is different from named_parameters()
     trainer.optimizer = optimizer
 
-    trainer.prepare_train_env()
-    args.step = 100000
-    for i in trange(start, args.step):
-        trainer.update_learning_rate(i)
-        loss, psnr = trainer.train_one_step(i)
+    # trainer.prepare_train_env()
+    args.epoch = 12
+    print(start)
+    if start != 0:
+        avg_psnr = trainer.log_test_set()
 
-        # validate model accuracy on test set
-        if i % 1000:
-            pass
-            # trainer.validate()
+    for i in range(start, args.epoch):
+        trainer.update_learning_rate(i)
+        loss, psnr = trainer.train_one_epoch(i)
+
+        # print test accuracy and save test results as images alternatively
+        if i % args.i_testset==0:
+            avg_psnr = trainer.log_test_set()
 
         if global_rank == 0:  # rank 0 records some global information
             # logging
-            if i % args.i_print==0:
-                tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss}  PSNR: {psnr}")
-                wandb.log({
-                    'train_loss': loss,
-                    'train_psnr': psnr
-                })
+            tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss}  PSNR: {psnr}")
+            wandb.log({
+                'train_loss': loss,
+                'train_psnr': psnr
+            })
 
             # save checkpoint
-            if (i % args.i_weights==0) and (i > 0):
+            if i % args.i_weights==0:
                 trainer.log_checkpoint()
 
-            # TODO: support distributed
-            # print test accuracy and save test results as images alternatively
-            if (i % args.i_testset==0) and (i > 0):
-                avg_psnr = trainer.log_test_set()
-                tqdm.write(f"[TEST] Iter: {i} PSNR: {avg_psnr}")
-                wandb.log({
-                    'test_psnr': avg_psnr
-                })
+            tqdm.write(f"[TEST] Iter: {i} PSNR: {avg_psnr}")
+            wandb.log({
+                'test_psnr': avg_psnr
+            })
 
-            # save test results as a video
-            if (i % args.i_video==0) and (i > 0):
-                trainer.log_test_video()
 
 if __name__ == '__main__':
 
