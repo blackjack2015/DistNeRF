@@ -238,7 +238,7 @@ class NerfTrainer:
             psnrs.update(psnr)
 
             if self.rank == 0:
-                iterator.set_postfix(loss=img_loss, psnr=psnr, avg_psnr=psnrs.avg)
+                iterator.set_postfix(loss=img_loss.item(), psnr=psnr.item(), avg_psnr=psnrs.avg)
 
             # # re-arrange the pixels
             # indices = np.arange(pixels.size()[0] * pixels.size()[1])
