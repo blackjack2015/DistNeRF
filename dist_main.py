@@ -28,7 +28,6 @@ def main(args):
 
     # trainer.prepare_train_env()
     args.epoch = 12
-    print(start)
     if start != 0:
         avg_psnr = trainer.log_test_set()
 
