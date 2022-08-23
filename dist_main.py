@@ -27,7 +27,7 @@ def main(args):
     trainer.optimizer = optimizer
 
     # trainer.prepare_train_env()
-    args.epoch = 12
+    args.epoch = 10
     if start != 0:
         avg_psnr = trainer.log_test_set()
 
@@ -41,7 +41,7 @@ def main(args):
 
         if global_rank == 0:  # rank 0 records some global information
             # logging
-            tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss}  PSNR: {psnr}")
+            tqdm.write(f"\n[TRAIN] Epoch: {i} Loss: {loss}  PSNR: {psnr}")
             wandb.log({
                 'train_loss': loss,
                 'train_psnr': psnr
@@ -51,7 +51,7 @@ def main(args):
             if i % args.i_weights==0:
                 trainer.log_checkpoint()
 
-            tqdm.write(f"[TEST] Iter: {i} PSNR: {avg_psnr}")
+            tqdm.write(f"\n[TEST] Epoch: {i} PSNR: {avg_psnr}")
             wandb.log({
                 'test_psnr': avg_psnr
             })
